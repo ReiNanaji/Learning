@@ -130,6 +130,19 @@ def detectInflexionv3(x, f, index):
                 idx += [j + 1 + index[i] for j, e in enumerate(variation) if e != 0]
     return idx
 
+def detectInflexionv4(x, f, index):
+    y = f(x)
+    first = [(y[i] - y[i-1]) / (x[1] - x[0]) for i in range(1, len(x))]
+    if len(index) == 2:
+        aboveMean = np.array([ 1*(d >= np.mean(first)) for d in first])
+        variation = aboveMean[1:] - aboveMean[:-1]
+        idx = [i+1 for i, e in enumerate(variation) if e != 0]
+    else:
+        aboveMean = np.array([ 1*(first[j] >= np.mean(first[index[0]:index[1]])) for j in range(index[0], index[1])])
+        variation = aboveMean[1:] - aboveMean[:-1]
+        idx = [j + 1 + index[0] for j, e in enumerate(variation) if e != 0]
+    return idx
+
 def invertFunction2(G, m, M):
     axis = np.linspace(m, M, 100)
 
@@ -173,10 +186,55 @@ def invertFunction2(G, m, M):
         f.append(newfunc)    
     return index, x, y, f
 
+def invertFunction3(G, m, M):
+    axis = np.linspace(m, M, 100)
+
+    x = [G(m), G(M)]
+    y = [m, M]
+    index = [0, len(axis) - 1]
+    f = [interp1d(x, y)]
+
+    # First step: built the curve from the beginning to the end
+    for i in range(15):
+        idx = detectInflexionv4(axis, lambda x: f[-1](G(x)), index)
+        index += idx
+        index = np.sort(index).tolist()
+        for i in idx:
+            x.append(G(axis[i]))
+            y.append(axis[i])
+            
+        order = np.argsort(x)
+        xlist.append(y)
+        x = np.array(x)[order].tolist()
+        y = np.array(y)[order].tolist()
+
+        newfunc = interp1d(x, y, kind="linear")  
+        f.append(newfunc)
+        
+    # Second step: Add mid points to improve the accuracy
+    for i in range(3):
+        idx = detectInflexionv3(axis, lambda x: f[-1](G(x)), index)
+        index += idx
+        index = np.sort(index).tolist()
+        for i in idx:
+            x.append(G(axis[i]))
+            y.append(axis[i])
+            
+        order = np.argsort(x)
+        xlist.append(y)
+        x = np.array(x)[order].tolist()
+        y = np.array(y)[order].tolist()
+
+        newfunc = interp1d(x, y, kind="linear")  
+        f.append(newfunc)    
+    return index, x, y, f
+
+
 m = 0.01
 M = 7
 tol = 1
 index, x, y, f = invertFunction2(G, m, M)
+axis = np.linspace(m, M, 100)
 
 plt.figure()
 plt.plot(axis, axis)
@@ -188,3 +246,34 @@ plt.figure()
 plt.plot(G(axis), f[-1](G(axis)))
 plt.grid()
 plt.show()
+
+
+m2 = -7
+M2 = -0.01
+index2, x2, y2, f2 = invertFunction3(G, m2, M2)
+axis2 = np.linspace(m2, M2, 100)
+
+plt.figure()
+plt.plot(axis2, axis2)
+plt.plot(axis2, f2[-1](G(axis2)))
+plt.grid()
+plt.show()
+
+plt.figure()
+plt.plot(G(axis2), f2[-1](G(axis2)))
+plt.grid()
+plt.show()
+
+
+# Export the interpolation points in excel
+xlist = [repr(i) for i in x]
+ylist = [repr(i) for i in y]
+
+data = pd.DataFrame({'x': xlist, 'y':ylist})
+data.to_csv("M:\Vathana\inthemoney.csv")
+
+xlist2 = [repr(i) for i in x2]
+ylist2 = [repr(i) for i in y2]
+
+data2 = pd.DataFrame({'x': xlist2, 'y':ylist2})
+data2.to_csv("M:\Vathana\outhemoney.csv")
