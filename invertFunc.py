@@ -20,8 +20,6 @@ plt.figure()
 plt.plot(x, y)
 plt.show()
 
-container = []
-
 def findInflexionPoints(x, f, tol, cut):
     if cut != 0:
         y = f(x)
@@ -54,6 +52,7 @@ def invertFunction(G, m, M, tol):
     # for decreasing function
     x = [G(m), G(M)]
     y = [m, M]
+    xlist = [y]
     f = [interp1d(x, y)]
     le = 0
     tle = len(x)
@@ -65,6 +64,7 @@ def invertFunction(G, m, M, tol):
             x.append(G(axis[i]))
             y.append(axis[i])
         order = np.argsort(x)
+        xlist.append(y)
         x = np.array(x)[order].tolist()
         y = np.array(y)[order].tolist()
         if len(x) <= 3:
@@ -75,27 +75,116 @@ def invertFunction(G, m, M, tol):
         newfunc = interp1d(x, y, kind="linear")  
         f.append(newfunc)
         tle = len(x)
-    return x, y, f
+    return x, y, f, xlist
+
+def derivatives(x, f):
+    y = f(x)
+    first = [(y[i] - y[i-1]) / (x[1] - x[0]) for i in range(1, len(x))]   
+    second = [(y[i+1] - 2 * y[i] + y[i-1]) / (x[1] - x[0])**2 for i in range(1, len(x) - 1)]  
+    third = [ (y[i+1] - 3 * y[i] + 3 * y[i-1] - y[i-2]) / (x[1] - x[0])**3 for i in range(2, len(x) - 1)]
+    return first, second, third
+
+def detectInflexionv1(x, f, index):
+    # Not used
+    y = f(x)
+    first = [(y[i] - y[i-1]) / (x[1] - x[0]) for i in range(1, len(x))]
+    if len(index) == 2:
+        aboveMean = np.array([ 1*(d >= np.mean(first)) for d in first])
+        variation = aboveMean[1:] - aboveMean[:-1]
+        idx = [i+1 for i, e in enumerate(variation) if e != 0]
+    else:
+        idx = []
+        for i in range(0, len(index) - 1):
+            aboveMean = np.array([ 1*(first[j] >= np.mean(first[index[i]:index[i+1]])) for j in range(index[i], index[i+1])])
+            variation = aboveMean[1:] - aboveMean[:-1]
+            idx += [j + 1 + index[i] for j, e in enumerate(variation) if e != 0]
+    return idx
+
+def detectInflexionv2(x, f, index):
+    y = f(x)
+    first = [(y[i] - y[i-1]) / (x[1] - x[0]) for i in range(1, len(x))]
+    if len(index) == 2:
+        aboveMean = np.array([ 1*(d >= np.mean(first)) for d in first])
+        variation = aboveMean[1:] - aboveMean[:-1]
+        idx = [i+1 for i, e in enumerate(variation) if e != 0]
+    else:
+        aboveMean = np.array([ 1*(first[j] >= np.mean(first[index[-2]:index[-1]])) for j in range(index[-2], index[-1])])
+        variation = aboveMean[1:] - aboveMean[:-1]
+        idx = [j + 1 + index[-2] for j, e in enumerate(variation) if e != 0]
+    return idx
+
+def detectInflexionv3(x, f, index):
+    y = f(x)
+    first = [(y[i] - y[i-1]) / (x[1] - x[0]) for i in range(1, len(x))]
+    if len(index) == 2:
+        aboveMean = np.array([ 1*(d >= np.mean(first)) for d in first])
+        variation = aboveMean[1:] - aboveMean[:-1]
+        idx = [i+1 for i, e in enumerate(variation) if e != 0]
+    else:
+        idx = []
+        for i in range(0, len(index) - 1):
+            error = np.sqrt(np.mean((y[index[i]:index[i+1]] - x[index[i]:index[i+1]])**2))
+            if error >= 0.02:
+                aboveMean = np.array([ 1*(first[j] >= np.mean(first[index[i]:index[i+1]])) for j in range(index[i], index[i+1])])
+                variation = aboveMean[1:] - aboveMean[:-1]
+                idx += [j + 1 + index[i] for j, e in enumerate(variation) if e != 0]
+    return idx
+
+def invertFunction2(G, m, M):
+    axis = np.linspace(m, M, 100)
+
+    x = [G(m), G(M)]
+    y = [m, M]
+    index = [0, len(axis) - 1]
+    f = [interp1d(x, y)]
+
+    # First step: built the curve from the beginning to the end
+    for i in range(15):
+        idx = detectInflexionv2(axis, lambda x: f[-1](G(x)), index)
+        index += idx
+        index = np.sort(index).tolist()
+        for i in idx:
+            x.append(G(axis[i]))
+            y.append(axis[i])
+            
+        order = np.argsort(x)
+        xlist.append(y)
+        x = np.array(x)[order].tolist()
+        y = np.array(y)[order].tolist()
+
+        newfunc = interp1d(x, y, kind="linear")  
+        f.append(newfunc)
+        
+    # Second step: Add mid points to improve the accuracy
+    for i in range(3):
+        idx = detectInflexionv3(axis, lambda x: f[-1](G(x)), index)
+        index += idx
+        index = np.sort(index).tolist()
+        for i in idx:
+            x.append(G(axis[i]))
+            y.append(axis[i])
+            
+        order = np.argsort(x)
+        xlist.append(y)
+        x = np.array(x)[order].tolist()
+        y = np.array(y)[order].tolist()
+
+        newfunc = interp1d(x, y, kind="linear")  
+        f.append(newfunc)    
+    return index, x, y, f
 
 m = 0.01
 M = 7
 tol = 1
-x, y, f = invertFunction(G, m, M, tol)
-axis = np.linspace(m, M, 100)
-
+index, x, y, f = invertFunction2(G, m, M)
 
 plt.figure()
 plt.plot(axis, axis)
-#plt.scatter(y, f[-1](x))
-plt.plot(axis, f[0](G(axis)))
-plt.plot(axis, f[1](G(axis)))
-plt.plot(axis, f[2](G(axis)))
-plt.plot(axis, f[3](G(axis)))
+plt.plot(axis, f[-1](G(axis)))
+plt.grid()
 plt.show()
-
 
 plt.figure()
 plt.plot(G(axis), f[-1](G(axis)))
-plt.scatter(x, y)
+plt.grid()
 plt.show()
-    
